@@ -1,10 +1,33 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Hand Gesture Recognition</title>
+    <meta charset="UTF-8">
+    <title>Hand Gesture Recorder</title>
 </head>
 <body>
-    <h1>Live Hand Gesture Recognition</h1>
-    <img src="/video_feed" width="960">
+    <h1>Hand Gesture Recorder</h1>
+    <img src="{{ url_for('video_feed') }}" width="640" height="480">
+
+    <div>
+        <button onclick="startRecording()">Start Recording</button>
+        <button onclick="stopRecording()">Stop Recording</button>
+    </div>
+
+    <div id="status">Status: Idle</div>
+
+    <script>
+        function startRecording() {
+            fetch('/start_record').then(res=>res.json()).then(data=>{
+                document.getElementById('status').innerText =
+                    `Recording label ${data.label}`;
+            });
+        }
+
+        function stopRecording() {
+            fetch('/stop_record').then(res=>res.json()).then(data=>{
+                document.getElementById('status').innerText = 'Stopped';
+            });
+        }
+    </script>
 </body>
 </html>
