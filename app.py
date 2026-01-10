@@ -23,6 +23,7 @@ next_label = 0  # auto-increment label
 cap = cv.VideoCapture(0)
 cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
 cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
+
 if not cap.isOpened():
     print("Cannot open camera")
     exit()
@@ -40,6 +41,7 @@ hands = mp_hands.Hands(
 keypoint_classifier = KeyPointClassifier()
 point_history_classifier = PointHistoryClassifier()
 
+# Load labels
 with open('model/keypoint_classifier/keypoint_classifier_label.csv', encoding='utf-8-sig') as f:
     keypoint_labels = [row[0] for row in csv.reader(f)]
 
@@ -67,12 +69,6 @@ def draw_point_history(image, point_history):
     for i, point in enumerate(point_history):
         if point[0] != 0 and point[1] != 0:
             cv.circle(image, (point[0], point[1]), 1 + int(i / 2), (152, 251, 152), 2)
-    return image
-
-def draw_info_text(image):
-    if recording and current_label != -1:
-        cv.putText(image, f"RECORDING: Label {current_label}", (10, 50),
-                   cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
     return image
 
 # ---------------- Processing functions ----------------
@@ -116,7 +112,7 @@ def generate_frames():
         ret, frame = cap.read()
         if not ret:
             continue
-        frame = cv.flip(frame, 1)
+        frame = cv.flip(frame,1)
         debug_image = frame.copy()
 
         rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
@@ -127,7 +123,6 @@ def generate_frames():
         try:
             if results.multi_hand_landmarks:
                 for hand_landmarks in results.multi_hand_landmarks:
-                    # --- Landmarks ---
                     landmarks = calc_landmark_list(frame, hand_landmarks)
                     pre_landmark = pre_process_landmark(landmarks)
                     pre_history = pre_process_point_history(point_history, frame)
@@ -144,42 +139,46 @@ def generate_frames():
                     if hand_id == 2:
                         point_history.append(landmarks[8])
                     else:
-                        point_history.append([0, 0])
+                        point_history.append([0,0])
 
                     # --- Record CSV ---
                     if recording and current_label != -1:
+                        # static keypoints
                         with open("model/keypoint_classifier/keypoint.csv","a",newline="") as f:
                             csv.writer(f).writerow(pre_landmark + [current_label])
+                        # dynamic point history
                         if len(pre_history) == history_length*2:
                             with open("model/point_history_classifier/point_history.csv","a",newline="") as f:
                                 csv.writer(f).writerow(pre_history + [current_label])
 
-                    # --- Draw bounding box ---
-                    h, w = frame.shape[:2]
-                    points = [[int(lm.x * w), int(lm.y * h)] for lm in hand_landmarks.landmark]
-                    x, y, bw, bh = cv.boundingRect(np.array(points))
-                    brect = [x, y, x+bw, y+bh]
+                    # --- Draw bounding box & landmarks ---
+                    brect = calc_bounding_rect(debug_image, hand_landmarks)
                     debug_image = draw_bounding_rect(debug_image, brect)
-
-                    # --- Draw landmarks ---
                     debug_image = draw_landmarks(debug_image, landmarks)
 
-                    # --- Draw predicted label on top of hand ---
-                    predicted_label = ""
-                    if hand_id < len(keypoint_labels):
-                        predicted_label = keypoint_labels[hand_id]
-                    if gesture_id < len(point_history_labels):
-                        predicted_label += f" / {point_history_labels[gesture_id]}"
+                    # --- Draw predicted label above hand ---
+                    hand_id = keypoint_classifier(pre_landmark)  # predicted class index
+                    if 0 <= hand_id < len(keypoint_labels):
+                        predicted_label = keypoint_labels[hand_id]  # map index to letter
+                    else:
+                        predicted_label = ""
                     if predicted_label:
                         cv.putText(debug_image, predicted_label, (brect[0], brect[1]-10),
-                                   cv.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+                                cv.FONT_HERSHEY_SIMPLEX, 0.8, (0,255,0), 2)
+
 
         except Exception as e:
             print("Error processing hand:", e)
 
-        # --- Draw point history and recording status ---
+        # --- Draw point history ---
         debug_image = draw_point_history(debug_image, point_history)
-        debug_image = draw_info_text(debug_image)
+
+        # --- Draw FPS / recording status ---
+        fps = cvFpsCalc.get()
+        cv.putText(debug_image, f"FPS:{fps:.1f}", (10, 30), cv.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        if recording and 0 <= current_label < len(keypoint_labels):
+            cv.putText(debug_image, f"RECORDING: {keypoint_labels[current_label]}", (10,50),
+                       cv.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2)
 
         ret, buffer = cv.imencode('.jpg', debug_image)
         frame_bytes = buffer.tobytes()
@@ -213,6 +212,5 @@ def stop_record():
     print("Recording stopped")
     return jsonify({"status":"stopped"})
 
-# ---------------- Main ----------------
 if __name__ == "__main__":
     app.run(debug=False)
