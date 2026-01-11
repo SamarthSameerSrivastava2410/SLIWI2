@@ -1,33 +1,181 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Hand Gesture Recorder</title>
+  <meta charset="UTF-8">
+  <title>Hand Gesture Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <h1>Hand Gesture Recorder</h1>
-    <img src="{{ url_for('video_feed') }}" width="640" height="480">
 
-    <div>
-        <button onclick="startRecording()">Start Recording</button>
-        <button onclick="stopRecording()">Stop Recording</button>
+<body class="bg-gray-900 text-white">
+
+<div class="min-h-full">
+
+  <!-- NAVBAR -->
+<nav class="bg-gray-800/50">
+  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+    <div class="flex h-16 items-center">
+       <img class="h-12 w-auto object-contain" src="cipherlogo.png" alt="Hand Gesture Logo">
+       <span class="ml-4 text-xl font-bold tracking-tight">Cipher</span>
     </div>
+  </div>
+</nav>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Navbar Only</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0f172a] text-white">
 
-    <div id="status">Status: Idle</div>
+<nav class="bg-[#0b1220] border-b border-white/10">
+  <div class="mx-auto max-w-7xl px-6">
+    <div class="flex h-16 items-center space-x-6">
+      
+      <!-- Logo -->
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 bg-indigo-500 rounded-full"></div>
+      </div>
 
-    <script>
-        function startRecording() {
-            fetch('/start_record').then(res=>res.json()).then(data=>{
-                document.getElementById('status').innerText =
-                    `Recording label ${data.label}`;
-            });
-        }
+      <!-- Nav Links -->
+        <div class="flex items-center space-x-2">
+        <a href="#" id="nav-dashboard" class="rounded-lg bg-black/30 px-4 py-2 text-sm font-medium">Dashboard</a>
+        <a href="#" id="nav-hand-gestures" class="px-4 py-2 text-sm text-gray-300 hover:text-white">Hand Gestures</a>
+      </div>
 
-        function stopRecording() {
-            fetch('/stop_record').then(res=>res.json()).then(data=>{
-                document.getElementById('status').innerText = 'Stopped';
-            });
-        }
-    </script>
+    </div>
+  </div>
+</nav>
+
 </body>
 </html>
+
+
+
+  <!-- HEADER -->
+  <header class="bg-gray-800 border-b border-white/10">
+    <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <h1 class="text-3xl font-bold tracking-tight">Hand Gesture Recognition</h1>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main id="page-content">
+    <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+
+      <!-- FLEX CONTAINER -->
+      <div class="flex flex-col md:flex-row gap-6">
+
+        <!-- CAMERA CARD -->
+        <div class="bg-gray-800 rounded-xl p-6 shadow-lg flex-shrink-0 md:w-2/3">
+          <h2 class="text-xl font-semibold mb-4">Live Camera Feed</h2>
+          <div class="flex justify-center">
+            <!-- Video stream from Flask app -->
+            <img id="video-stream" src="/video_feed" class="rounded-lg border border-gray-700 w-full h-auto max-h-[600px]" alt="Live video feed">
+          </div>
+        </div>
+
+        <!-- TRANSLATED OUTPUT CARD -->
+        <div class="bg-gray-800 rounded-xl p-6 shadow-lg md:w-1/3">
+          <h2 class="text-xl font-semibold mb-4">Translated Output</h2>
+          <textarea id="output" placeholder="Translated text will appear here..." class="w-full h-[600px] rounded-lg p-4 bg-gray-900 text-white resize-none"></textarea>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+</div>
+
+<script>
+  let video;
+
+  // No need for camera access - video comes from Flask app
+</script>
+
+<script>
+  async function loadPage(url) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.statusText);
+      const text = await res.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(text, 'text/html');
+
+      const content = document.getElementById('page-content');
+      if (!content) return;
+
+      // Clear current content
+      content.innerHTML = '';
+
+      // Append non-script nodes from fetched body
+      Array.from(doc.body.childNodes).forEach(node => {
+        if (node.nodeName.toLowerCase() === 'script') return;
+        content.appendChild(document.importNode(node, true));
+      });
+
+      // Execute scripts from fetched page
+      const scripts = doc.querySelectorAll('script');
+      scripts.forEach(s => {
+        const script = document.createElement('script');
+        if (s.src) {
+          script.src = s.src;
+        } else {
+          script.textContent = s.textContent;
+        }
+        document.body.appendChild(script);
+      });
+      // Hide header for hand-gestures view
+      try {
+        const hdr = document.querySelector('header');
+        if (hdr && url.includes('hand-gestures.html')) hdr.style.display = 'none';
+      } catch (e) { /* ignore */ }
+    } catch (err) {
+      console.error('Failed to load page', err);
+      alert('Failed to load page: ' + err.message);
+    }
+  }
+
+  document.getElementById('nav-hand-gestures').addEventListener('click', e => {
+    e.preventDefault();
+    loadPage('hand-gestures.html');
+  });
+
+  document.getElementById('nav-dashboard').addEventListener('click', async e => {
+    e.preventDefault();
+    try {
+      const res = await fetch('index.html');
+      if (!res.ok) throw new Error(res.statusText);
+      const text = await res.text();
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(text, 'text/html');
+      const page = doc.getElementById('page-content');
+      const content = document.getElementById('page-content');
+      if (!page || !content) return;
+      content.innerHTML = page.innerHTML;
+
+      // Execute inline scripts inside the fetched page-content
+      const scripts = page.querySelectorAll('script');
+      scripts.forEach(s => {
+        const script = document.createElement('script');
+        if (s.src) script.src = s.src;
+        else script.textContent = s.textContent;
+        document.body.appendChild(script);
+      });
+      // Restore header when dashboard is loaded
+      try {
+        const hdr = document.querySelector('header');
+        if (hdr) hdr.style.display = '';
+      } catch (e) { /* ignore */ }
+      // Video stream is automatically loaded via img src
+    } catch (err) {
+      console.error('Failed to load dashboard', err);
+      alert('Failed to load dashboard: ' + err.message);
+    }
+  });
+</script>
+
+</body>
+</html>
+

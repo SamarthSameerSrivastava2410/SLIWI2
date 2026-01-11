@@ -29,11 +29,12 @@ class PointHistoryClassifier(object):
 
     def __call__(self, point_history):
         input_data = np.array([point_history], dtype=np.float32)
-        self.interpreter.set_tensor(
-            self.input_details[0]['index'], input_data
-        )
+        self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
         self.interpreter.invoke()
-        result = self.interpreter.get_tensor(
-            self.output_details[0]['index']
-        )
-        return np.argmax(result)
+
+        output = self.interpreter.get_tensor(self.output_details[0]['index'])[0]
+        class_id = int(np.argmax(output))
+        confidence = float(output[class_id])
+
+        return class_id, confidence
+

@@ -21,11 +21,13 @@ class KeyPointClassifier:
         self.num_classes = 21  # change according to your model
 
     def __call__(self, landmark_list):
-        if not hasattr(self, "interpreter"):
-            return -1  # model not loaded
-        # Input must be float32 and shaped like (1, 63) for 21 landmarks * 3
         input_data = np.array(landmark_list, dtype=np.float32).reshape(1, -1)
         self.interpreter.set_tensor(self.input_details[0]['index'], input_data)
         self.interpreter.invoke()
-        output_data = self.interpreter.get_tensor(self.output_details[0]['index'])
-        return int(np.argmax(output_data))
+
+        output = self.interpreter.get_tensor(self.output_details[0]['index'])[0]
+        class_id = int(np.argmax(output))
+        confidence = float(output[class_id])
+
+        return class_id, confidence
+

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hand Gestures</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-10">
+
+  <h1 class="text-3xl font-bold">Hand Gestures Understanding</h1>
+  <p class="mt-4 mb-8">Welcome to the Hand Gestures section.</p>
+
+  <!-- ASL Alphabet Section -->
+  <h2 class="text-2xl font-semibold mb-4">ASL Alphabet (A–Z)</h2>
+  <dialog id="letter-dialog"><img src="" id="letter-image"></dialog> 
+  <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-6">
+
+    <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('A')">A</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('B')">B</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('C')">C</button>
+  <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('D')">D</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('E')">E</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('F')">F</button>
+  <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('G')">G</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('H')">H</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('I')">I</button>
+    <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('J')">J</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('K')">K</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('L')">L</button>
+  <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('M')">M</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('N')">N</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('O')">O</button>
+    <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('P')">P</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('Q')">Q</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('R')">R</button>
+    <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('S')">S</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('T')">T</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('U')">U</button>
+  <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('V')">V</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('W')">W</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('X')">X</button>
+    <button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('Y')">Y</button>
+<button class="bg-gray-800 p-4 rounded-lg text-center text-white hover:text-gray-300" onclick="openLetter('Z')">Z</button>
+
+
+
+  </div>
+
+  <script>
+    function openLetter(letter) {
+      const dialog = document.getElementById('letter-dialog');
+      const img = document.getElementById('letter-image');
+      if (!dialog || !img) return;
+      img.src = `HS Images/${letter}.jpeg`;
+      dialog.showModal();
+    }
+    // Close dialog when clicking outside the dialog content
+    (function() {
+      const dialog = document.getElementById('letter-dialog');
+      if (!dialog) return;
+      dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) dialog.close();
+      });
+      // Also close on Escape
+      dialog.addEventListener('cancel', () => dialog.close());
+    })();
+  </script>
+
+</body>
+</html>
