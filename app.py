@@ -1,3 +1,10 @@
+import time
+
+last_update_time = 0
+last_label = ""
+typing_gap_time = 5  # seconds of pause to add a space
+
+
 from flask import Flask, Response, render_template, request, jsonify
 import cv2
 import numpy as np
@@ -10,10 +17,8 @@ from collections import deque, Counter
 from model.keypoint_classifier.keypoint_classifier import KeyPointClassifier
 from model.point_history_classifier.point_history_classifier import PointHistoryClassifier
 
-
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
-
 
 # ================= CONFIG =================
 HISTORY_LENGTH = 16
@@ -88,11 +93,17 @@ static_history = deque(maxlen=10)
 dynamic_history = deque(maxlen=10)
 recording_label = None
 recording_mode = None   # "static" or "dynamic"
+current_static = ""
+current_dynamic = ""
 
 # ================= ROUTES =================
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route("/hand-gestures")
+def hand_gestures():
+    return render_template("hand-gestures.html")
 
 @app.route("/start_record", methods=["POST"])
 def start_record():
@@ -109,6 +120,11 @@ def stop_record():
     recording_mode = None
     return jsonify({"status": "stopped"})
 
+@app.route("/get_current_labels")
+def get_current_labels():
+    global current_static, current_dynamic
+    return jsonify({"static": current_static, "dynamic": current_dynamic})
+
 @app.route("/video_feed")
 def video_feed():
     return Response(generate_frames(),
@@ -117,6 +133,8 @@ def video_feed():
 # ================= VIDEO LOOP =================
 def generate_frames():
     global recording_label, recording_mode
+    global current_static, current_dynamic
+    global last_update_time, last_label
 
     while True:
         ret, frame = cap.read()
@@ -125,12 +143,13 @@ def generate_frames():
 
         frame = cv2.flip(frame, 1)
 
-        # ---------- DEFAULT VALUES (VERY IMPORTANT) ----------
-        static_result = None
-        static_conf = 0.0
+        # ---------- DEFAULT VALUES ----------
         static_label = ""
         dynamic_label = ""
 
+        current_time = time.time()
+
+        # ---------- PROCESS HAND ----------
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         result = hands.process(rgb)
 
@@ -147,7 +166,7 @@ def generate_frames():
                 mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=2)
             )
 
-            # ---------- STATIC ----------
+            # ---------- STATIC CLASSIFIER ----------
             norm_landmarks = pre_process_landmark(landmarks)
             static_id, static_conf = keypoint_classifier(norm_landmarks)
 
@@ -157,38 +176,41 @@ def generate_frames():
             static_result = majority_vote(static_history)
             if static_result is not None and 0 <= static_result < len(KEYPOINT_LABELS):
                 static_label = KEYPOINT_LABELS[static_result]
+                # Immediately update current_static
+                current_static = static_label
 
-            # ---------- STATIC CONFIDENCE ----------
-            cv2.putText(
-                frame,
-                f"Conf: {static_conf * 100:.1f}%",
-                (10, 160),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (255, 255, 0),
-                2
-            )
-
-            # ---------- DYNAMIC ----------
+            # ---------- DYNAMIC CLASSIFIER ----------
             point_history.append(landmarks[8])  # index fingertip
 
             if len(point_history) == HISTORY_LENGTH:
                 norm_history = pre_process_point_history(point_history, frame)
-                dyn_label, dyn_conf = point_history_classifier(norm_history)
+                dyn_id, dyn_conf = point_history_classifier(norm_history)
 
                 if dyn_conf > DYNAMIC_CONF_TH:
-                    dynamic_history.append(dyn_label)
+                    dynamic_history.append(dyn_id)
 
             dynamic_result = majority_vote(dynamic_history)
-            if dynamic_result:
-                dynamic_label = dynamic_result
+            if dynamic_result is not None:
+                dynamic_label = str(dynamic_result)
+            else:
+                dynamic_label = ""
+
+            # ---------- UPDATE CURRENT DYNAMIC LABEL EVERY 4 SECONDS ----------
+            if current_time - last_update_time > 4:
+                if last_label != dynamic_label:
+                    # Add a space if previous label ended and pause > typing_gap_time
+                    if dynamic_label == "" and current_dynamic != "":
+                        current_dynamic += " "
+                    elif dynamic_label != "":
+                        current_dynamic += dynamic_label
+                    last_label = dynamic_label
+                    last_update_time = current_time
 
             # ---------- RECORD ----------
             if recording_label:
                 if recording_mode == "static":
                     with open(KEYPOINT_CSV, "a", newline="") as f:
                         csv.writer(f).writerow(norm_landmarks + [recording_label])
-
                 elif recording_mode == "dynamic" and len(point_history) == HISTORY_LENGTH:
                     with open(POINT_HISTORY_CSV, "a", newline="") as f:
                         csv.writer(f).writerow(norm_history + [recording_label])
@@ -204,9 +226,11 @@ def generate_frames():
             cv2.putText(frame, f"REC {recording_mode.upper()}: {recording_label}",
                         (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
+        # ---------- SEND FRAME ----------
         _, buffer = cv2.imencode(".jpg", frame)
         yield (b"--frame\r\n"
                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+
 
 
 # ================= RUN =================

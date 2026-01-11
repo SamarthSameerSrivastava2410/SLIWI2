@@ -11,46 +11,20 @@
 <div class="min-h-full">
 
   <!-- NAVBAR -->
-<nav class="bg-gray-800/50">
-  <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-    <div class="flex h-16 items-center">
-       <img class="h-12 w-auto object-contain" src="/static/cipherlogo.png" alt="Hand Gesture Logo">
-       <span class="ml-4 text-xl font-bold tracking-tight">Cipher</span>
-    </div>
-  </div>
-</nav>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Navbar Only</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-[#0f172a] text-white">
-
-<nav class="bg-[#0b1220] border-b border-white/10">
-  <div class="mx-auto max-w-7xl px-6">
-    <div class="flex h-16 items-center space-x-6">
-      
-      <!-- Logo -->
-      <div class="flex items-center gap-2">
-        <div class="w-6 h-6 bg-indigo-500 rounded-full"></div>
+  <nav class="bg-gray-800/50">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div class="flex h-16 items-center justify-between">
+        <div class="flex items-center">
+           <img class="h-12 w-auto object-contain" src="/static/cipherlogo.png" alt="Hand Gesture Logo">
+           <span class="ml-4 text-xl font-bold tracking-tight">Cipher</span>
+        </div>
+        <div class="flex items-center space-x-4">
+          <a href="/" class="text-white hover:text-gray-300">Translator</a>
+          <a href="/hand-gestures" class="text-white hover:text-gray-300">Hand Gestures</a>
+        </div>
       </div>
-
-      <!-- Nav Links -->
-        <div class="flex items-center space-x-2">
-        <a href="#" id="nav-dashboard" class="rounded-lg bg-black/30 px-4 py-2 text-sm font-medium">Dashboard</a>
-        <a href="/hand-gestures" id="nav-hand-gestures" class="px-4 py-2 text-sm text-gray-300 hover:text-white">Hand Gestures</a>
-      </div>
-
     </div>
-  </div>
-</nav>
-
-</body>
-</html>
-
-
+  </nav>
 
   <!-- HEADER -->
   <header class="bg-gray-800 border-b border-white/10">
@@ -78,7 +52,9 @@
         <!-- TRANSLATED OUTPUT CARD -->
         <div class="bg-gray-800 rounded-xl p-6 shadow-lg md:w-1/3">
           <h2 class="text-xl font-semibold mb-4">Translated Output</h2>
-          <textarea id="output" placeholder="Translated text will appear here..." class="w-full h-[600px] rounded-lg p-4 bg-gray-900 text-white resize-none"></textarea>
+
+          <!-- Single textarea for all gestures -->
+          <textarea id="output" placeholder="Translated text will appear here..." class="w-full h-[500px] rounded-lg p-4 bg-gray-900 text-white resize-none" readonly></textarea>
         </div>
 
       </div>
@@ -89,65 +65,57 @@
 </div>
 
 <script>
-  let video;
+let lastStaticLabel = "";
+let lastStaticTime = 0;
+const recognitionDelay = 3; // seconds between recognizing same label
+let typingQueue = [];
+let isTyping = false;
 
-  // No need for camera access - video comes from Flask app
-</script>
+function typeFromQueue() {
+    if (isTyping || typingQueue.length === 0) return;
+    isTyping = true;
 
-<script>
-  async function loadPage(url) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(res.statusText);
-      const text = await res.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(text, 'text/html');
+    const textarea = document.getElementById('output');
+    let text = typingQueue.shift();
+    let i = 0;
 
-      const content = document.getElementById('page-content');
-      if (!content) return;
-
-      // Clear current content
-      content.innerHTML = '';
-
-      // Append non-script nodes from fetched body
-      Array.from(doc.body.childNodes).forEach(node => {
-        if (node.nodeName.toLowerCase() === 'script') return;
-        content.appendChild(document.importNode(node, true));
-      });
-
-      // Execute scripts from fetched page
-      const scripts = doc.querySelectorAll('script');
-      scripts.forEach(s => {
-        const script = document.createElement('script');
-        if (s.src) {
-          script.src = s.src;
+    const interval = setInterval(() => {
+        if (i < text.length) {
+            textarea.value += text[i];
+            i++;
         } else {
-          script.textContent = s.textContent;
+            clearInterval(interval);
+            isTyping = false;
+            typeFromQueue(); // start next in queue if any
         }
-        document.body.appendChild(script);
-      });
-      // Hide header for hand-gestures view
-      try {
-        const hdr = document.querySelector('header');
-        if (hdr && url.includes('hand-gestures.html')) hdr.style.display = 'none';
-      } catch (e) { /* ignore */ }
-    } catch (err) {
-      console.error('Failed to load page', err);
-      alert('Failed to load page: ' + err.message);
-    }
-  }
+    }, 100); // 100ms per character
+}
 
-  document.getElementById('nav-hand-gestures').addEventListener('click', e => {
-    e.preventDefault();
-    loadPage('hand-gestures.html');
-  });
+setInterval(() => {
+    fetch('/get_current_labels')
+        .then(res => res.json())
+        .then(data => {
+            const staticLabel = data.static || "";
+            const currentTime = Date.now() / 1000;
 
-  document.getElementById('nav-dashboard').addEventListener('click', e => {
-    e.preventDefault();
-    window.location.href = '/';
-  });
+            // ---------- STATIC LABEL ----------
+            if (staticLabel && (staticLabel !== lastStaticLabel) && (currentTime - lastStaticTime >= recognitionDelay)) {
+                typingQueue.push(staticLabel);
+                lastStaticLabel = staticLabel;
+                lastStaticTime = currentTime;
+            }
+
+            // Start typing
+            typeFromQueue();
+
+        })
+        .catch(err => console.error(err));
+}, 500);
 </script>
+
+
+
+
 
 </body>
 </html>
-
