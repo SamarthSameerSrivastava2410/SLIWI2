@@ -31,12 +31,7 @@ POINT_HISTORY_LABELS = load_labels("model/point_history_classifier/point_history
 
 # ---------------- App ----------------
 app = Flask(__name__)
-cap = cv.VideoCapture(0)
-cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
-if not cap.isOpened():
-    print("Cannot open camera")
-    exit()
+cap = None
 
 # ---------------- Mediapipe ----------------
 mp_hands = mp.solutions.hands
@@ -48,6 +43,10 @@ point_history_classifier = PointHistoryClassifier()
 
 # ---------------- State ----------------
 cvFpsCalc = CvFpsCalc(buffer_len=10)
+point_history = deque(maxlen=HISTORY_LENGTH)
+static_history = deque(maxlen=10)
+dynamic_history = deque(maxlen=10)
+recording_label = None
 point_history = deque(maxlen=HISTORY_LENGTH)
 static_history = deque(maxlen=10)
 dynamic_history = deque(maxlen=10)
@@ -107,7 +106,19 @@ def video_feed():
                     mimetype="multipart/x-mixed-replace; boundary=frame")
 
 def generate_frames():
-    global recording_label
+    global cap, recording_label, point_history, static_history, dynamic_history
+    if cap is None:
+        cap = cv.VideoCapture(0)
+        cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
+    if not cap.isOpened():
+        error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        cv.putText(error_frame, "Camera not available", (50, 240), cv.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        ret, buffer = cv.imencode(".jpg", error_frame)
+        frame_bytes = buffer.tobytes()
+        yield (b"--frame\r\n"
+               b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
+        return
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -175,6 +186,14 @@ def generate_frames():
 @app.route("/")
 def index():
     return render_template("index.html")
+
+@app.route("/hand-gestures")
+def hand_gestures():
+    return render_template("hand-gestures.html")
+
+@app.route("/hand-gestures.html")
+def hand_gestures_html():
+    return render_template("hand-gestures.html")
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":

@@ -14,7 +14,7 @@
 <nav class="bg-gray-800/50">
   <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
     <div class="flex h-16 items-center">
-       <img class="h-12 w-auto object-contain" src="cipherlogo.png" alt="Hand Gesture Logo">
+       <img class="h-12 w-auto object-contain" src="/static/cipherlogo.png" alt="Hand Gesture Logo">
        <span class="ml-4 text-xl font-bold tracking-tight">Cipher</span>
     </div>
   </div>
@@ -40,7 +40,7 @@
       <!-- Nav Links -->
         <div class="flex items-center space-x-2">
         <a href="#" id="nav-dashboard" class="rounded-lg bg-black/30 px-4 py-2 text-sm font-medium">Dashboard</a>
-        <a href="#" id="nav-hand-gestures" class="px-4 py-2 text-sm text-gray-300 hover:text-white">Hand Gestures</a>
+        <a href="/hand-gestures" id="nav-hand-gestures" class="px-4 py-2 text-sm text-gray-300 hover:text-white">Hand Gestures</a>
       </div>
 
     </div>
@@ -142,37 +142,9 @@
     loadPage('hand-gestures.html');
   });
 
-  document.getElementById('nav-dashboard').addEventListener('click', async e => {
+  document.getElementById('nav-dashboard').addEventListener('click', e => {
     e.preventDefault();
-    try {
-      const res = await fetch('index.html');
-      if (!res.ok) throw new Error(res.statusText);
-      const text = await res.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(text, 'text/html');
-      const page = doc.getElementById('page-content');
-      const content = document.getElementById('page-content');
-      if (!page || !content) return;
-      content.innerHTML = page.innerHTML;
-
-      // Execute inline scripts inside the fetched page-content
-      const scripts = page.querySelectorAll('script');
-      scripts.forEach(s => {
-        const script = document.createElement('script');
-        if (s.src) script.src = s.src;
-        else script.textContent = s.textContent;
-        document.body.appendChild(script);
-      });
-      // Restore header when dashboard is loaded
-      try {
-        const hdr = document.querySelector('header');
-        if (hdr) hdr.style.display = '';
-      } catch (e) { /* ignore */ }
-      // Video stream is automatically loaded via img src
-    } catch (err) {
-      console.error('Failed to load dashboard', err);
-      alert('Failed to load dashboard: ' + err.message);
-    }
+    window.location.href = '/';
   });
 </script>
 
