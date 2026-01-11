@@ -124,11 +124,15 @@ def generate_frames():
             continue
 
         frame = cv2.flip(frame, 1)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        result = hands.process(rgb)
 
+        # ---------- DEFAULT VALUES (VERY IMPORTANT) ----------
+        static_result = None
+        static_conf = 0.0
         static_label = ""
         dynamic_label = ""
+
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(rgb)
 
         if result.multi_hand_landmarks:
             hand_landmarks = result.multi_hand_landmarks[0]
@@ -139,12 +143,9 @@ def generate_frames():
                 frame,
                 hand_landmarks,
                 mp_hands.HAND_CONNECTIONS,
-                mp_drawing.DrawingSpec(color=(255,255,255), thickness=2, circle_radius=3),
-                mp_drawing.DrawingSpec(color=(255,255,255), thickness=2)
+                mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=2, circle_radius=3),
+                mp_drawing.DrawingSpec(color=(255, 255, 255), thickness=2)
             )
-
-
-        
 
             # ---------- STATIC ----------
             norm_landmarks = pre_process_landmark(landmarks)
@@ -154,11 +155,22 @@ def generate_frames():
                 static_history.append(static_id)
 
             static_result = majority_vote(static_history)
-            if static_result is not None:
+            if static_result is not None and 0 <= static_result < len(KEYPOINT_LABELS):
                 static_label = KEYPOINT_LABELS[static_result]
 
+            # ---------- STATIC CONFIDENCE ----------
+            cv2.putText(
+                frame,
+                f"Conf: {static_conf * 100:.1f}%",
+                (10, 160),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (255, 255, 0),
+                2
+            )
+
             # ---------- DYNAMIC ----------
-            point_history.append(landmarks[8])
+            point_history.append(landmarks[8])  # index fingertip
 
             if len(point_history) == HISTORY_LENGTH:
                 norm_history = pre_process_point_history(point_history, frame)
@@ -184,6 +196,7 @@ def generate_frames():
         # ---------- UI ----------
         cv2.putText(frame, f"Static: {static_label}", (10, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+
         cv2.putText(frame, f"Dynamic: {dynamic_label}", (10, 80),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
@@ -194,6 +207,7 @@ def generate_frames():
         _, buffer = cv2.imencode(".jpg", frame)
         yield (b"--frame\r\n"
                b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
+
 
 # ================= RUN =================
 if __name__ == "__main__":
