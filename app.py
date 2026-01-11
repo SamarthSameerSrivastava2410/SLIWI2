@@ -1,59 +1,49 @@
 from flask import Flask, Response, render_template, request, jsonify
-import cv2 as cv
+import cv2
 import numpy as np
+import mediapipe as mp
+import csv
 import copy
 import itertools
 from collections import deque, Counter
-import mediapipe as mp
-import csv
-from utils import CvFpsCalc
+
 from model.keypoint_classifier.keypoint_classifier import KeyPointClassifier
 from model.point_history_classifier.point_history_classifier import PointHistoryClassifier
 
-# ---------------- CONFIG ----------------
+
+mp_drawing = mp.solutions.drawing_utils
+mp_drawing_styles = mp.solutions.drawing_styles
+
+
+# ================= CONFIG =================
 HISTORY_LENGTH = 16
 STATIC_CONF_TH = 0.6
 DYNAMIC_CONF_TH = 0.6
+
 KEYPOINT_CSV = "model/keypoint_classifier/keypoint.csv"
 POINT_HISTORY_CSV = "model/point_history_classifier/point_history.csv"
 
-# ---------------- Load label CSVs ----------------
-def load_labels(csv_path):
+KEYPOINT_LABEL_CSV = "model/keypoint_classifier/keypoint_classifier_label.csv"
+POINT_HISTORY_LABEL_CSV = "model/point_history_classifier/point_history_classifier_label.csv"
+
+# ================= LOAD LABELS =================
+def load_labels(path):
     labels = []
-    with open(csv_path, newline="", encoding="utf-8-sig") as f:
+    with open(path, encoding="utf-8-sig") as f:
         for row in csv.reader(f):
-            if row:
-                labels.append(row[0])
+            labels.append(row[0])
     return labels
 
-KEYPOINT_LABELS = load_labels("model/keypoint_classifier/keypoint_classifier_label.csv")
-POINT_HISTORY_LABELS = load_labels("model/point_history_classifier/point_history_classifier_label.csv")
+KEYPOINT_LABELS = load_labels(KEYPOINT_LABEL_CSV)
+POINT_HISTORY_LABELS = load_labels(POINT_HISTORY_LABEL_CSV)
 
-# ---------------- App ----------------
-app = Flask(__name__)
-cap = None
+# ================= HELPERS =================
+def majority_vote(history):
+    if not history:
+        return None
+    return Counter(history).most_common(1)[0][0]
 
-# ---------------- Mediapipe ----------------
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(max_num_hands=1, min_detection_confidence=0.7, min_tracking_confidence=0.5)
-
-# ---------------- Models ----------------
-keypoint_classifier = KeyPointClassifier()
-point_history_classifier = PointHistoryClassifier()
-
-# ---------------- State ----------------
-cvFpsCalc = CvFpsCalc(buffer_len=10)
-point_history = deque(maxlen=HISTORY_LENGTH)
-static_history = deque(maxlen=10)
-dynamic_history = deque(maxlen=10)
-recording_label = None
-point_history = deque(maxlen=HISTORY_LENGTH)
-static_history = deque(maxlen=10)
-dynamic_history = deque(maxlen=10)
-recording_label = None
-
-# ---------------- Utils ----------------
-def calc_landmark_list(image, landmarks):
+def calc_landmarks(image, landmarks):
     h, w = image.shape[:2]
     return [[int(lm.x * w), int(lm.y * h)] for lm in landmarks.landmark]
 
@@ -65,7 +55,7 @@ def pre_process_landmark(landmarks):
         p[1] -= base_y
     temp = list(itertools.chain.from_iterable(temp))
     max_val = max(map(abs, temp))
-    return [v / max_val for v in temp] if max_val != 0 else temp
+    return [v / max_val for v in temp] if max_val else temp
 
 def pre_process_point_history(history, image):
     h, w = image.shape[:2]
@@ -76,125 +66,135 @@ def pre_process_point_history(history, image):
         p[1] = (p[1] - base_y) / h
     return list(itertools.chain.from_iterable(temp))
 
-def majority_vote(history):
-    if not history:
-        return -1
-    return Counter(history).most_common(1)[0][0]
+# ================= APP =================
+app = Flask(__name__)
+cap = cv2.VideoCapture(0)
 
-# ---------------- Flask recording routes ----------------
-@app.route("/start_record")
+# ================= MEDIAPIPE =================
+mp_hands = mp.solutions.hands
+hands = mp_hands.Hands(
+    max_num_hands=1,
+    min_detection_confidence=0.7,
+    min_tracking_confidence=0.5
+)
+
+# ================= MODELS =================
+keypoint_classifier = KeyPointClassifier()
+point_history_classifier = PointHistoryClassifier()
+
+# ================= STATE =================
+point_history = deque(maxlen=HISTORY_LENGTH)
+static_history = deque(maxlen=10)
+dynamic_history = deque(maxlen=10)
+recording_label = None
+recording_mode = None   # "static" or "dynamic"
+
+# ================= ROUTES =================
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+@app.route("/start_record", methods=["POST"])
 def start_record():
-    global recording_label
-    label = request.args.get("label", "").upper()
-    if label and len(label) == 1 and 'A' <= label <= 'Z':
-        recording_label = label
-        print(f"[REC] Recording started for label: {recording_label}")
-        return jsonify({"status": "recording", "label": recording_label})
-    return jsonify({"status": "error", "message": "Invalid label"})
+    global recording_label, recording_mode
+    data = request.json
+    recording_label = data["label"]
+    recording_mode = data["mode"]
+    return jsonify({"status": "recording"})
 
-@app.route("/stop_record")
+@app.route("/stop_record", methods=["POST"])
 def stop_record():
-    global recording_label
+    global recording_label, recording_mode
     recording_label = None
-    print("[REC] Recording stopped")
+    recording_mode = None
     return jsonify({"status": "stopped"})
 
-# ---------------- Video streaming ----------------
 @app.route("/video_feed")
 def video_feed():
     return Response(generate_frames(),
                     mimetype="multipart/x-mixed-replace; boundary=frame")
 
+# ================= VIDEO LOOP =================
 def generate_frames():
-    global cap, recording_label, point_history, static_history, dynamic_history
-    if cap is None:
-        cap = cv.VideoCapture(0)
-        cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
-    if not cap.isOpened():
-        error_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv.putText(error_frame, "Camera not available", (50, 240), cv.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-        ret, buffer = cv.imencode(".jpg", error_frame)
-        frame_bytes = buffer.tobytes()
-        yield (b"--frame\r\n"
-               b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
-        return
+    global recording_label, recording_mode
+
     while True:
         ret, frame = cap.read()
         if not ret:
             continue
-        frame = cv.flip(frame, 1)
-        debug_image = frame.copy()
-        rgb = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-        results = hands.process(rgb)
+
+        frame = cv2.flip(frame, 1)
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result = hands.process(rgb)
+
         static_label = ""
         dynamic_label = ""
 
-        if results.multi_hand_landmarks:
-            hand_landmarks = results.multi_hand_landmarks[0]
-            landmarks = calc_landmark_list(frame, hand_landmarks)
-            norm_landmarks = pre_process_landmark(landmarks)
+        if result.multi_hand_landmarks:
+            hand_landmarks = result.multi_hand_landmarks[0]
+            landmarks = calc_landmarks(frame, hand_landmarks)
 
-            # ---- STATIC ----
+            # ---------- DRAW HAND SKELETON ----------
+            mp_drawing.draw_landmarks(
+                frame,
+                hand_landmarks,
+                mp_hands.HAND_CONNECTIONS,
+                mp_drawing.DrawingSpec(color=(255,255,255), thickness=2, circle_radius=3),
+                mp_drawing.DrawingSpec(color=(255,255,255), thickness=2)
+            )
+
+
+        
+
+            # ---------- STATIC ----------
+            norm_landmarks = pre_process_landmark(landmarks)
             static_id, static_conf = keypoint_classifier(norm_landmarks)
+
             if static_conf > STATIC_CONF_TH:
                 static_history.append(static_id)
+
             static_result = majority_vote(static_history)
-            if static_result != -1 and static_result < len(KEYPOINT_LABELS):
+            if static_result is not None:
                 static_label = KEYPOINT_LABELS[static_result]
 
-            # ---- DYNAMIC ----
+            # ---------- DYNAMIC ----------
             point_history.append(landmarks[8])
+
             if len(point_history) == HISTORY_LENGTH:
                 norm_history = pre_process_point_history(point_history, frame)
-                dyn_id, dyn_conf = point_history_classifier(norm_history)
-                if dyn_conf > DYNAMIC_CONF_TH:
-                    dynamic_history.append(dyn_id)
-            dynamic_result = majority_vote(dynamic_history)
-            if dynamic_result != -1 and dynamic_result < len(POINT_HISTORY_LABELS):
-                dynamic_label = POINT_HISTORY_LABELS[dynamic_result]
+                dyn_label, dyn_conf = point_history_classifier(norm_history)
 
-            # ---- RECORD DATA ----
+                if dyn_conf > DYNAMIC_CONF_TH:
+                    dynamic_history.append(dyn_label)
+
+            dynamic_result = majority_vote(dynamic_history)
+            if dynamic_result:
+                dynamic_label = dynamic_result
+
+            # ---------- RECORD ----------
             if recording_label:
-                with open(KEYPOINT_CSV, "a", newline="") as f:
-                    csv.writer(f).writerow(norm_landmarks + [recording_label])
-                if len(point_history) == HISTORY_LENGTH:
+                if recording_mode == "static":
+                    with open(KEYPOINT_CSV, "a", newline="") as f:
+                        csv.writer(f).writerow(norm_landmarks + [recording_label])
+
+                elif recording_mode == "dynamic" and len(point_history) == HISTORY_LENGTH:
                     with open(POINT_HISTORY_CSV, "a", newline="") as f:
                         csv.writer(f).writerow(norm_history + [recording_label])
 
-            # ---- DRAW HAND ----
-            for lm in landmarks:
-                cv.circle(debug_image, (lm[0], lm[1]), 4, (255,255,255), -1)
-                cv.circle(debug_image, (lm[0], lm[1]), 4, (0,0,0), 1)
+        # ---------- UI ----------
+        cv2.putText(frame, f"Static: {static_label}", (10, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(frame, f"Dynamic: {dynamic_label}", (10, 80),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
-        # ---- UI ----
-        fps = cvFpsCalc.get()
-        cv.putText(debug_image, f"FPS: {fps:.1f}", (10,30), cv.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-        if static_label:
-            cv.putText(debug_image, f"STATIC: {static_label}", (10,70), cv.FONT_HERSHEY_SIMPLEX, 1, (0,255,0),2)
-        if dynamic_label:
-            cv.putText(debug_image, f"DYNAMIC: {dynamic_label}", (10,110), cv.FONT_HERSHEY_SIMPLEX, 1, (255,0,0),2)
         if recording_label:
-            cv.putText(debug_image, f"RECORDING: {recording_label}", (10,150), cv.FONT_HERSHEY_SIMPLEX, 1, (0,0,255),2)
+            cv2.putText(frame, f"REC {recording_mode.upper()}: {recording_label}",
+                        (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
-        ret, buffer = cv.imencode(".jpg", debug_image)
-        frame_bytes = buffer.tobytes()
+        _, buffer = cv2.imencode(".jpg", frame)
         yield (b"--frame\r\n"
-               b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
+               b"Content-Type: image/jpeg\r\n\r\n" + buffer.tobytes() + b"\r\n")
 
-# ---------------- Home ----------------
-@app.route("/")
-def index():
-    return render_template("index.html")
-
-@app.route("/hand-gestures")
-def hand_gestures():
-    return render_template("hand-gestures.html")
-
-@app.route("/hand-gestures.html")
-def hand_gestures_html():
-    return render_template("hand-gestures.html")
-
-# ---------------- RUN ----------------
+# ================= RUN =================
 if __name__ == "__main__":
     app.run(debug=False)
